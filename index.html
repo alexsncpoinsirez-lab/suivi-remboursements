@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suivi Remboursements</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Remboursements">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;
+    --green:#00e5a0;--green-dim:#00e5a018;
+    --amber:#f5a623;--amber-dim:#f5a62318;
+    --red:#ff4d6d;--red-dim:#ff4d6d18;
+    --blue:#4d9fff;--blue-dim:#4d9fff13;
+    --purple:#a78bfa;--purple-dim:#a78bfa13;
+    --text:#e8eaf0;--text-muted:#6b7280;--text-dim:#9ca3af;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+  .header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 28px;display:flex;align-items:center;gap:12px;}
+  .header h1{font-size:18px;font-weight:700;}
+  .header p{font-size:12px;color:var(--text-muted);margin-top:2px;font-family:'IBM Plex Mono',monospace;}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:20px 28px 0;}
+  @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden;}
+  .stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+  .stat.att::before{background:var(--amber);}
+  .stat.rem::before{background:var(--green);}
+  .stat.ref::before{background:var(--red);}
+  .stat.tot::before{background:var(--blue);}
+  .stat-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-family:'IBM Plex Mono',monospace;}
+  .stat-value{font-size:22px;font-weight:700;margin-top:6px;font-family:'IBM Plex Mono',monospace;}
+  .stat.att .stat-value{color:var(--amber);}
+  .stat.rem .stat-value{color:var(--green);}
+  .stat.ref .stat-value{color:var(--red);}
+  .stat.tot .stat-value{color:var(--blue);}
+  .stat-count{font-size:11px;color:var(--text-muted);margin-top:3px;}
+
+  .main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:20px 28px 28px;}
+  @media(max-width:950px){.main{grid-template-columns:1fr;}}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+  .panel-header{padding:13px 18px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-dim);display:flex;align-items:center;gap:8px;}
+  .panel-body{padding:18px;}
+
+  .field{margin-bottom:12px;position:relative;}
+  .field label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:0.5px;}
+  .field input,.field select,.field textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13px;color:var(--text);font-family:'IBM Plex Sans',sans-serif;transition:border-color 0.15s;}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--green);}
+  .field select option{background:var(--surface2);}
+  .field textarea{resize:none;height:52px;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  .autocomplete-list{position:absolute;top:100%;left:0;right:0;background:var(--surface2);border:1px solid var(--green);border-radius:7px;z-index:50;max-height:160px;overflow-y:auto;display:none;}
+  .autocomplete-list.open{display:block;}
+  .ac-item{padding:9px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .ac-item:hover,.ac-item.selected{background:var(--green-dim);}
+  .ac-item span{color:var(--text);}
+  .ac-new{color:var(--green);font-style:italic;}
+  .tag-new{font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 6px;border-radius:4px;border:1px solid var(--green);}
+
+  .btn{width:100%;background:var(--green);color:#0a1a12;border:none;border-radius:7px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:opacity 0.15s;}
+  .btn:hover{opacity:0.88;}
+
+  .import-zone{border:1.5px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;background:var(--surface2);margin-bottom:12px;}
+  .import-zone:hover,.import-zone.drag{border-color:var(--blue);background:var(--blue-dim);}
+  .import-zone .iz-icon{font-size:24px;margin-bottom:5px;}
+  .import-zone .iz-title{font-size:13px;font-weight:600;}
+  .import-zone .iz-sub{font-size:11px;color:var(--text-muted);margin-top:2px;}
+  #file-input{display:none;}
+
+  .match-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;position:relative;}
+  .match-item.confirmed{border-color:var(--green);background:var(--green-dim);}
+  .match-item.rejected{opacity:0.5;}
+  .match-score{position:absolute;top:10px;right:10px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--green);background:var(--green-dim);padding:2px 7px;border-radius:10px;}
+  .match-dep{font-size:12px;font-weight:600;}
+  .match-arrow{font-size:11px;color:var(--text-muted);margin:3px 0;}
+  .match-bank{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;word-break:break-all;}
+  .match-amount{font-size:13px;font-weight:700;color:var(--green);margin-top:4px;}
+  .match-actions{display:flex;gap:6px;margin-top:8px;}
+  .btn-sm{flex:1;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+  .btn-confirm{background:var(--green);color:#0a1a12;}
+  .btn-reject{background:var(--red-dim);color:var(--red);border:1px solid var(--red);}
+
+  .toolbar{display:flex;gap:8px;padding:13px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+  .flt{padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;font-size:11px;cursor:pointer;color:var(--text-muted);font-family:'IBM Plex Sans',sans-serif;transition:all 0.15s;}
+  .flt.active{background:var(--surface2);color:var(--text);border-color:var(--text-muted);}
+  .flt.f-att.active{color:var(--amber);border-color:var(--amber);background:var(--amber-dim);}
+  .flt.f-rem.active{color:var(--green);border-color:var(--green);background:var(--green-dim);}
+  .flt.f-ref.active{color:var(--red);border-color:var(--red);background:var(--red-dim);}
+  .search-input{margin-left:auto;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12px;color:var(--text);font-family:'IBM Plex Sans',sans-serif;width:180px;}
+  .search-input:focus{outline:none;border-color:var(--green);}
+
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  thead tr{border-bottom:1px solid var(--border);}
+  th{padding:10px 14px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:600;font-family:'IBM Plex Mono',monospace;white-space:nowrap;cursor:pointer;user-select:none;}
+  th:hover{color:var(--text);}
+  th.sorted{color:var(--green);}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tbody tr:hover td{background:var(--surface2);}
+
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;}
+  .badge-att{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber);}
+  .badge-rem{background:var(--green-dim);color:var(--green);border:1px solid var(--green);}
+  .badge-ref{background:var(--red-dim);color:var(--red);border:1px solid var(--red);}
+  .cat-tag{font-size:10px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);padding:2px 7px;border-radius:6px;font-family:'IBM Plex Mono',monospace;}
+  .ent-tag{font-size:10px;color:var(--blue);background:var(--blue-dim);border:1px solid var(--blue);padding:2px 7px;border-radius:6px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle;}
+  .pay-tag{font-size:10px;color:var(--purple);background:var(--purple-dim);border:1px solid var(--purple);padding:2px 7px;border-radius:6px;font-family:'IBM Plex Mono',monospace;}
+  .amt{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+  .row-actions{display:flex;gap:4px;}
+  .icon-btn{padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;font-size:11px;cursor:pointer;color:var(--text-muted);transition:all 0.15s;}
+  .icon-btn:hover{background:var(--surface2);color:var(--text);}
+  .icon-btn.ok:hover{border-color:var(--green);color:var(--green);}
+  .icon-btn.ko:hover{border-color:var(--red);color:var(--red);}
+
+  .empty-state{text-align:center;padding:50px 20px;color:var(--text-muted);font-size:13px;}
+  .empty-state .big{font-size:32px;margin-bottom:10px;}
+  .facture-btn{padding:4px 10px;border-radius:6px;border:1.5px solid var(--border);background:transparent;font-size:11px;cursor:pointer;font-family:"IBM Plex Sans",sans-serif;color:var(--text-muted);transition:all 0.2s;white-space:nowrap;}
+  .facture-btn.sent{background:var(--green-dim);border-color:var(--green);color:var(--green);}
+  .facture-btn.unsent{background:var(--amber-dim);border-color:var(--amber);color:var(--amber);}
+  .flt.f-fac.active{color:var(--purple);border-color:var(--purple);background:var(--purple-dim);}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;width:420px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+  .modal h3{font-size:15px;font-weight:700;margin-bottom:18px;color:var(--text);}
+  .modal-actions{display:flex;gap:10px;margin-top:16px;}
+  .btn-cancel{flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+  .btn-save{flex:2;background:var(--green);color:#0a1a12;border:none;border-radius:7px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+  .no-match{text-align:center;padding:16px;color:var(--text-muted);font-size:12px;}
+
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#0a1a12;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:200;}
+  .toast.show{transform:translateY(0);opacity:1;}
+  .toast.error{background:var(--red);color:white;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>💼 Suivi des Remboursements</h1>
+    <p>Avances professionnelles — import depuis Google Sheets janvier–mai 2026</p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat att"><div class="stat-label">En attente</div><div class="stat-value" id="s-att">0,00 €</div><div class="stat-count" id="c-att">0 dépense(s)</div></div>
+  <div class="stat rem"><div class="stat-label">Remboursé</div><div class="stat-value" id="s-rem">0,00 €</div><div class="stat-count" id="c-rem">0 dépense(s)</div></div>
+  <div class="stat ref"><div class="stat-label">Refusé</div><div class="stat-value" id="s-ref">0,00 €</div><div class="stat-count" id="c-ref">0 dépense(s)</div></div>
+  <div class="stat tot"><div class="stat-label">Total avancé</div><div class="stat-value" id="s-tot">0,00 €</div><div class="stat-count" id="c-tot">0 dépense(s)</div></div>
+</div>
+
+<div class="main">
+  <!-- LEFT -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="panel">
+      <div class="panel-header">➕ Nouvelle dépense</div>
+      <div class="panel-body">
+        <div class="field-row">
+          <div class="field"><label>Date</label><input type="date" id="f-date"></div>
+          <div class="field"><label>Montant (€)</label><input type="number" id="f-montant" placeholder="0.00" step="0.01" min="0"></div>
+        </div>
+        <div class="field" id="ent-field">
+          <label>Entreprise destinataire</label>
+          <input type="text" id="f-ent" placeholder="Ex: Arraincourt Biogaz..." autocomplete="off"
+            oninput="acInput()" onkeydown="acKey(event)" onfocus="acInput()" onblur="setTimeout(acClose,200)">
+          <div class="autocomplete-list" id="ac-list"></div>
+        </div>
+        <div class="field"><label>Catégorie</label>
+          <select id="f-cat">
+            <option value="Carburant">⛽ Carburant</option>
+            <option value="Matériel">🔧 Matériel</option>
+            <option value="Pièce détachée">⚙️ Pièce détachée</option>
+            <option value="Repas">🍽️ Repas</option>
+            <option value="Transport">🚗 Transport</option>
+            <option value="Fournitures">📦 Fournitures</option>
+            <option value="Autre">📋 Autre</option>
+          </select>
+        </div>
+        <div class="field" id="four-field">
+          <label>Fournisseur</label>
+          <input type="text" id="f-four" placeholder="Ex: KARCHER, AMAZON..." autocomplete="off"
+            oninput="acGenInput('f-four','ac-four',fournisseurs,saveFours)"
+            onkeydown="acGenKey(event,'f-four','ac-four',fournisseurs,saveFours)"
+            onfocus="acGenInput('f-four','ac-four',fournisseurs,saveFours)"
+            onblur="setTimeout(()=>acGenClose('ac-four'),200)">
+          <div class="autocomplete-list" id="ac-four"></div>
+        </div>
+        <div class="field" id="pay-field">
+          <label>Moyen de paiement</label>
+          <input type="text" id="f-pay" placeholder="Ex: cb 2, cb perso 2..." autocomplete="off"
+            oninput="acGenInput('f-pay','ac-pay',paiements,savePays)"
+            onkeydown="acGenKey(event,'f-pay','ac-pay',paiements,savePays)"
+            onfocus="acGenInput('f-pay','ac-pay',paiements,savePays)"
+            onblur="setTimeout(()=>acGenClose('ac-pay'),200)">
+          <div class="autocomplete-list" id="ac-pay"></div>
+        </div>
+        <div class="field"><label>Description</label><textarea id="f-desc" placeholder="Détail..."></textarea></div>
+        <button class="btn" onclick="ajouter()">+ Ajouter la dépense</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">🏦 Relevé bancaire XLS</div>
+      <div class="panel-body">
+        <div class="import-zone" onclick="document.getElementById('file-input').click()"
+             ondragover="event.preventDefault();this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="handleDrop(event)">
+          <div class="iz-icon">📂</div>
+          <div class="iz-title">Importer votre relevé XLS</div>
+          <div class="iz-sub">Cliquez ou glissez-déposez</div>
+        </div>
+        <input type="file" id="file-input" accept=".xls,.xlsx" onchange="importXLS(this)">
+        <div id="match-zone"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT TABLE -->
+  <div class="panel" style="display:flex;flex-direction:column;">
+    <div class="toolbar">
+      <button class="flt active" onclick="setFiltre('tous',this)">Tous</button>
+      <button class="flt f-att" onclick="setFiltre('attente',this)">⏳ En attente</button>
+      <button class="flt f-rem" onclick="setFiltre('rembourse',this)">✅ Remboursé</button>
+      <button class="flt f-fac" onclick="setFiltre('facture',this)">✉️ Facture non envoyée</button>
+      <button class="flt f-ref" onclick="setFiltre('refuse',this)">❌ Refusé</button>
+      <input class="search-input" type="text" placeholder="🔍 Rechercher..." oninput="recherche=this.value.toLowerCase();render()">
+    </div>
+    <div class="table-wrap" style="flex:1;">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('date')">Date</th>
+            <th onclick="sortBy('desc')">Description</th>
+            <th>Fournisseur</th>
+            <th onclick="sortBy('ent')">Entreprise</th>
+            <th>Paiement</th>
+            <th onclick="sortBy('montant')">Montant</th>
+            <th>Facture</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty-state" id="empty">
+        <div class="big">📋</div>Aucune dépense.<br>Ajoutez votre première avance.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)fermerModif()">
+  <div class="modal">
+    <h3>✏️ Modifier la dépense</h3>
+    <div class="field-row">
+      <div class="field"><label>Date</label><input type="date" id="m-date"></div>
+      <div class="field"><label>Montant (€)</label><input type="number" id="m-montant" step="0.01" min="0"></div>
+    </div>
+    <div class="field" style="position:relative">
+      <label>Entreprise destinataire</label>
+      <input type="text" id="m-ent" autocomplete="off"
+        oninput="acGenInput('m-ent','m-ac-ent',entreprises,saveEnts)"
+        onkeydown="acGenKey(event,'m-ent','m-ac-ent',entreprises,saveEnts)"
+        onfocus="acGenInput('m-ent','m-ac-ent',entreprises,saveEnts)"
+        onblur="setTimeout(()=>acGenClose('m-ac-ent'),200)">
+      <div class="autocomplete-list" id="m-ac-ent"></div>
+    </div>
+    <div class="field"><label>Catégorie</label>
+      <select id="m-cat">
+        <option value="Carburant">⛽ Carburant</option>
+        <option value="Matériel">🔧 Matériel</option>
+        <option value="Pièce détachée">⚙️ Pièce détachée</option>
+        <option value="Repas">🍽️ Repas</option>
+        <option value="Transport">🚗 Transport</option>
+        <option value="Fournitures">📦 Fournitures</option>
+        <option value="Autre">📋 Autre</option>
+      </select>
+    </div>
+    <div class="field" style="position:relative">
+      <label>Fournisseur</label>
+      <input type="text" id="m-four" autocomplete="off"
+        oninput="acGenInput('m-four','m-ac-four',fournisseurs,saveFours)"
+        onkeydown="acGenKey(event,'m-four','m-ac-four',fournisseurs,saveFours)"
+        onfocus="acGenInput('m-four','m-ac-four',fournisseurs,saveFours)"
+        onblur="setTimeout(()=>acGenClose('m-ac-four'),200)">
+      <div class="autocomplete-list" id="m-ac-four"></div>
+    </div>
+    <div class="field" style="position:relative">
+      <label>Moyen de paiement</label>
+      <input type="text" id="m-pay" autocomplete="off"
+        oninput="acGenInput('m-pay','m-ac-pay',paiements,savePays)"
+        onkeydown="acGenKey(event,'m-pay','m-ac-pay',paiements,savePays)"
+        onfocus="acGenInput('m-pay','m-ac-pay',paiements,savePays)"
+        onblur="setTimeout(()=>acGenClose('m-ac-pay'),200)">
+      <div class="autocomplete-list" id="m-ac-pay"></div>
+    </div>
+    <div class="field"><label>Description</label><textarea id="m-desc" style="resize:none;height:52px"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fermerModif()">Annuler</button>
+      <button class="btn-save" onclick="sauvegarderModif()">💾 Sauvegarder</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── DONNÉES INITIALES depuis Google Sheets ───────────────────────────
+const INITIAL_DATA = [];
+
+// Entreprises mémorisées
+const DEFAULT_ENTS = [
+  'Arraincourt Biogaz','Metha de la Rotte','SNC Poinsirez','Poinsirez',
+  'Biogaz','Thicourt','Bertrand','Chloé','308 Tiaphat','Charles','Jean-Paul','pichon'
+];
+
+let entreprises = JSON.parse(localStorage.getItem('remb_ents_v4') || JSON.stringify(DEFAULT_ENTS));
+function saveEnts(){ localStorage.setItem('remb_ents_v4', JSON.stringify(entreprises)); }
+
+// Charger les données : si localStorage vide, utiliser les données initiales
+let data;
+const stored = localStorage.getItem('remb_v4');
+if (stored) {
+  data = JSON.parse(stored);
+} else {
+  // Ajouter les IDs aux données initiales
+  data = INITIAL_DATA
+    .filter(d => d.montant > 0)
+    .map((d,i) => ({...d, id: 1700000000000 + i}));
+  localStorage.setItem('remb_v4', JSON.stringify(data));
+}
+
+// Listes mémorisées fournisseurs et paiements
+const DEFAULT_FOURS = ['amazon','Fitec','Engels','AR-Storeshop','123 roulement','Conrad','cergy vis','allo pneus','BartsParts','rexel','aliexpress','aquishop','autoportéediscount','centrale pneus','garage gagnant.com','karcher scheiber.de','rouesecours24.fr','Allo pneumatique'];
+const DEFAULT_PAYS  = ['cb 2','cb perso 2','cb2','cb1'];
+let fournisseurs = JSON.parse(localStorage.getItem('remb_fours') || JSON.stringify(DEFAULT_FOURS));
+let paiements    = JSON.parse(localStorage.getItem('remb_pays')  || JSON.stringify(DEFAULT_PAYS));
+function saveFours(){ localStorage.setItem('remb_fours', JSON.stringify(fournisseurs)); }
+function savePays(){  localStorage.setItem('remb_pays',  JSON.stringify(paiements)); }
+
+let filtre = 'tous';
+let recherche = '';
+let sortCol = 'date';
+let sortDir = 1;
+let acIdx = -1;
+let pendingMatches = [];
+let editId = null;
+
+document.getElementById('f-date').valueAsDate = new Date();
+
+function save(){ localStorage.setItem('remb_v4', JSON.stringify(data)); }
+function fmt(n){ return n.toFixed(2).replace('.',',') + ' €'; }
+function fmtDate(d){
+  if(!d) return '—';
+  const [y,m,j]=d.split('-');
+  return j+'/'+m+'/'+y;
+}
+function toast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast show'+(type==='error'?' error':'');
+  setTimeout(()=>t.className='toast',2800);
+}
+
+// ─── AUTOCOMPLETE GÉNÉRIQUE ──────────────────────────────────────────
+function acGenInput(inputId, listId, liste, saveFn){
+  // Stocker la référence dans un attribut data pour acGenAddDirect
+  const inputEl = document.getElementById(inputId);
+  inputEl._acListe = liste;
+  inputEl._acSave  = saveFn;
+  inputEl._acList  = listId;
+  const val = inputEl.value.trim().toLowerCase();
+  const list = document.getElementById(listId);
+  const filtered = liste.filter(e => e.toLowerCase().includes(val));
+  const exact = liste.some(e => e.toLowerCase() === val);
+  let html = filtered.map(e =>
+    `<div class="ac-item" onmousedown="acGenSelect('${inputId}','${listId}','${e.replace(/'/g,"\\'")}')"><span>${e}</span></div>`
+  ).join('');
+  if(val.length > 0 && !exact){
+    const raw = inputEl.value.trim();
+    html += `<div class="ac-item" onmousedown="acGenAddDirect('${inputId}')">
+      <span class="ac-new">+ Ajouter "${raw}"</span><span class="tag-new">NOUVEAU</span></div>`;
+  }
+  list.innerHTML = html;
+  list.className = 'autocomplete-list' + (html ? ' open' : '');
+}
+function acGenSelect(inputId, listId, val){
+  document.getElementById(inputId).value = val;
+  acGenClose(listId);
+}
+function acGenAddDirect(inputId){
+  const el = document.getElementById(inputId);
+  const val = el.value.trim();
+  const liste = el._acListe; const saveFn = el._acSave; const listId = el._acList;
+  if(val && liste && !liste.includes(val)){ liste.push(val); saveFn(); toast('"'+val+'" mémorisé ✓'); }
+  if(listId) acGenClose(listId);
+}
+function acGenClose(listId){ const el=document.getElementById(listId); if(el) el.className='autocomplete-list'; }
+function acGenKey(e, inputId, listId, liste, saveFn){
+  const list = document.getElementById(listId);
+  const items = list.querySelectorAll('.ac-item');
+  if(!items.length) return;
+  if(e.key==='ArrowDown'){acIdx=Math.min(acIdx+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('selected',i===acIdx));e.preventDefault();}
+  else if(e.key==='ArrowUp'){acIdx=Math.max(acIdx-1,0);items.forEach((el,i)=>el.classList.toggle('selected',i===acIdx));e.preventDefault();}
+  else if(e.key==='Enter'&&acIdx>=0){items[acIdx].dispatchEvent(new MouseEvent('mousedown'));e.preventDefault();}
+  else if(e.key==='Escape') acGenClose(listId);
+}
+
+// ─── AUTOCOMPLETE ENTREPRISE ──────────────────────────────────────────
+function acInput(){
+  const val=document.getElementById('f-ent').value.trim().toLowerCase();
+  const list=document.getElementById('ac-list');
+  acIdx=-1;
+  const filtered=entreprises.filter(e=>e.toLowerCase().includes(val));
+  let html=filtered.map(e=>`<div class="ac-item" data-val="${e}" onmousedown="acSelect('${e.replace(/'/g,"\\'")}')"><span>${e}</span></div>`).join('');
+  const exactMatch=entreprises.some(e=>e.toLowerCase()===val);
+  if(val.length>1 && !exactMatch){
+    const display=document.getElementById('f-ent').value.trim();
+    html+=`<div class="ac-item" onmousedown="acAdd()"><span class="ac-new">+ Ajouter "${display}"</span><span class="tag-new">NOUVEAU</span></div>`;
+  }
+  list.innerHTML=html;
+  list.className='autocomplete-list'+(html?' open':'');
+}
+function acSelect(val){ document.getElementById('f-ent').value=val; acClose(); }
+function acAdd(){
+  const val=document.getElementById('f-ent').value.trim();
+  if(val && !entreprises.includes(val)){ entreprises.push(val); saveEnts(); toast('"'+val+'" mémorisée ✓'); }
+  acClose();
+}
+function acClose(){ document.getElementById('ac-list').className='autocomplete-list'; }
+function acKey(e){
+  const list=document.getElementById('ac-list');
+  const items=list.querySelectorAll('.ac-item');
+  if(!items.length) return;
+  if(e.key==='ArrowDown'){acIdx=Math.min(acIdx+1,items.length-1);acHighlight(items);e.preventDefault();}
+  else if(e.key==='ArrowUp'){acIdx=Math.max(acIdx-1,0);acHighlight(items);e.preventDefault();}
+  else if(e.key==='Enter'&&acIdx>=0){items[acIdx].dispatchEvent(new MouseEvent('mousedown'));e.preventDefault();}
+  else if(e.key==='Escape') acClose();
+}
+function acHighlight(items){ items.forEach((el,i)=>el.classList.toggle('selected',i===acIdx)); }
+
+// ─── MODALE MODIFICATION ─────────────────────────────────────────────
+function ouvrirModif(id){
+  const d = data.find(x=>x.id===id);
+  if(!d) return;
+  editId = id;
+  document.getElementById('m-date').value  = d.date||'';
+  document.getElementById('m-montant').value = d.montant;
+  document.getElementById('m-ent').value   = d.ent!=='-'?d.ent:'';
+  document.getElementById('m-cat').value   = d.cat||'Autre';
+  document.getElementById('m-four').value  = d.four!=='-'?d.four:'';
+  document.getElementById('m-pay').value   = d.pay!=='-'?d.pay:'';
+  document.getElementById('m-desc').value  = d.desc!=='-'?d.desc:'';
+  document.getElementById('modal').style.display='flex';
+}
+function fermerModif(){ document.getElementById('modal').style.display='none'; editId=null; }
+function sauvegarderModif(){
+  if(!editId) return;
+  const d = data.find(x=>x.id===editId);
+  if(!d) return;
+  const montant = parseFloat(document.getElementById('m-montant').value);
+  const date    = document.getElementById('m-date').value;
+  if(!date||isNaN(montant)||montant<=0){ toast('Date et montant requis.','error'); return; }
+  const ent  = document.getElementById('m-ent').value.trim();
+  const four = document.getElementById('m-four').value.trim();
+  const pay  = document.getElementById('m-pay').value.trim();
+  if(ent  && !entreprises.includes(ent))  { entreprises.push(ent);  saveEnts(); }
+  if(four && !fournisseurs.includes(four)){ fournisseurs.push(four); saveFours(); }
+  if(pay  && !paiements.includes(pay))    { paiements.push(pay);     savePays(); }
+  d.date    = date;
+  d.montant = montant;
+  d.ent     = ent||'-';
+  d.cat     = document.getElementById('m-cat').value;
+  d.four    = four||'-';
+  d.pay     = pay||'-';
+  d.desc    = document.getElementById('m-desc').value.trim()||'-';
+  save(); fermerModif(); render(); toast('Dépense modifiée ✓');
+}
+
+// ─── AJOUTER ─────────────────────────────────────────────────────────
+function ajouter(){
+  const date=document.getElementById('f-date').value;
+  const montant=parseFloat(document.getElementById('f-montant').value);
+  const ent=document.getElementById('f-ent').value.trim();
+  if(!date||isNaN(montant)||montant<=0){toast('Date et montant requis.','error');return;}
+  if(ent && !entreprises.includes(ent)){entreprises.push(ent);saveEnts();toast('"'+ent+'" mémorisée ✓');}
+  data.unshift({
+    id:Date.now(),date,montant,
+    cat:document.getElementById('f-cat').value,
+    four:document.getElementById('f-four').value.trim()||'-',
+    pay:document.getElementById('f-pay').value.trim()||'-',
+    desc:document.getElementById('f-desc').value.trim()||'-',
+    ent:ent||'-',statut:'attente'
+  });
+  save();
+  ['f-montant','f-four','f-pay','f-desc','f-ent'].forEach(id=>document.getElementById(id).value='');
+  render(); toast('Dépense ajoutée ✓');
+}
+
+function toggleFacture(id){
+  const d=data.find(x=>x.id===id);
+  if(d){d.facture=!d.facture;save();render();}
+}
+function changerStatut(id,s){
+  const d=data.find(x=>x.id===id);
+  if(d){d.statut=s;save();render();}
+}
+function supprimer(id){
+  if(confirm('Supprimer ?')){data=data.filter(x=>x.id!==id);save();render();}
+}
+function setFiltre(f,btn){
+  filtre=f;
+  document.querySelectorAll('.flt').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+// ─── TRI ──────────────────────────────────────────────────────────────
+function sortBy(col){
+  if(sortCol===col) sortDir*=-1; else{sortCol=col;sortDir=1;}
+  render();
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────
+function render(){
+  const att=data.filter(d=>d.statut==='attente');
+  const rem=data.filter(d=>d.statut==='rembourse');
+  const ref=data.filter(d=>d.statut==='refuse');
+  document.getElementById('s-att').textContent=fmt(att.reduce((a,d)=>a+d.montant,0));
+  document.getElementById('s-rem').textContent=fmt(rem.reduce((a,d)=>a+d.montant,0));
+  document.getElementById('s-ref').textContent=fmt(ref.reduce((a,d)=>a+d.montant,0));
+  document.getElementById('s-tot').textContent=fmt(data.reduce((a,d)=>a+d.montant,0));
+  document.getElementById('c-att').textContent=att.length+' dépense(s)';
+  document.getElementById('c-rem').textContent=rem.length+' dépense(s)';
+  document.getElementById('c-ref').textContent=ref.length+' dépense(s)';
+  document.getElementById('c-tot').textContent=data.length+' dépense(s)';
+
+  let list=filtre==='tous'?[...data]:filtre==='facture'?data.filter(d=>!d.facture&&d.statut!=='refuse'):data.filter(d=>d.statut===filtre);
+  if(recherche) list=list.filter(d=>
+    (d.desc||'').toLowerCase().includes(recherche)||
+    (d.four||'').toLowerCase().includes(recherche)||
+    (d.ent||'').toLowerCase().includes(recherche)||
+    (d.pay||'').toLowerCase().includes(recherche)
+  );
+  list.sort((a,b)=>{
+    let va=a[sortCol]||'',vb=b[sortCol]||'';
+    if(sortCol==='montant'){va=a.montant;vb=b.montant;}
+    return va<vb?-sortDir:va>vb?sortDir:0;
+  });
+
+  const tbody=document.getElementById('tbody');
+  const empty=document.getElementById('empty');
+  if(list.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  tbody.innerHTML=list.map(d=>{
+    const bc=d.statut==='attente'?'badge-att':d.statut==='rembourse'?'badge-rem':'badge-ref';
+    const bl=d.statut==='attente'?'⏳ ATTENTE':d.statut==='rembourse'?'✅ REMBOURSÉ':'❌ REFUSÉ';
+    let acts='';
+    if(d.statut!=='rembourse') acts+=`<button class="icon-btn ok" onclick="changerStatut(${d.id},'rembourse')" title="Remboursé">✅</button>`;
+    if(d.statut!=='refuse')    acts+=`<button class="icon-btn ko" onclick="changerStatut(${d.id},'refuse')" title="Refusé">❌</button>`;
+    if(d.statut!=='attente')   acts+=`<button class="icon-btn" onclick="changerStatut(${d.id},'attente')" title="Attente">⏳</button>`;
+    acts+=`<button class="icon-btn" onclick="ouvrirModif(${d.id})" title="Modifier">✏️</button>`;
+    acts+=`<button class="icon-btn ko" onclick="supprimer(${d.id})" title="Supprimer">🗑</button>`;
+    const entLabel=d.ent&&d.ent!=='-'?`<span class="ent-tag" title="${d.ent}">${d.ent}</span>`:'<span style="color:var(--text-muted)">—</span>';
+    const payLabel=d.pay&&d.pay!=='-'?`<span class="pay-tag">${d.pay}</span>`:'<span style="color:var(--text-muted)">—</span>';
+    return `<tr>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted);white-space:nowrap">${fmtDate(d.date)}</td>
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d.desc}">${d.desc}</td>
+      <td style="font-size:12px;color:var(--text-dim)">${d.four||'—'}</td>
+      <td>${entLabel}</td>
+      <td>${payLabel}</td>
+      <td class="amt">${fmt(d.montant)}</td>
+      <td><button class="facture-btn ${d.facture?'sent':'unsent'}" onclick="toggleFacture(${d.id})">${d.facture?'✉️ Envoyée':'📄 À envoyer'}</button></td>
+      <td><span class="badge ${bc}">${bl}</span></td>
+      <td><div class="row-actions">${acts}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── IMPORT XLS ──────────────────────────────────────────────────────
+function handleDrop(e){
+  e.preventDefault();
+  document.querySelector('.import-zone').classList.remove('drag');
+  const file=e.dataTransfer.files[0];
+  if(file) processFile(file);
+}
+function importXLS(input){
+  const file=input.files[0];
+  if(file) processFile(file);
+  input.value='';
+}
+function processFile(file){
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      analyserReleve(rows);
+    }catch(err){ toast('Erreur de lecture.','error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function excelDateToStr(val){
+  if(val instanceof Date) return val.toISOString().split('T')[0];
+  if(typeof val==='number'){const d=new Date(Math.round((val-25569)*86400*1000));return d.toISOString().split('T')[0];}
+  if(typeof val==='string'&&val.match(/\d{2}\/\d{2}\/\d{4}/)){const[j,m,y]=val.split('/');return y+'-'+m+'-'+j;}
+  return null;
+}
+function normalise(str){
+  return(str||'').toString().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+}
+function scoreFournisseur(f,l){
+  const fn=normalise(f),ln=normalise(l);
+  if(!fn||fn==='-') return 0;
+  if(ln.includes(fn)) return 60;
+  const fw=fn.split(' ').filter(w=>w.length>2);
+  let hits=0;
+  for(const w of fw) if(ln.split(' ').some(lw=>lw.includes(w)||w.includes(lw))) hits++;
+  return fw.length>0?Math.round(hits/fw.length*50):0;
+}
+function scoreEntreprise(e,l){
+  const en=normalise(e),ln=normalise(l);
+  if(!en||en==='-') return 0;
+  if(ln.includes(en)) return 40;
+  const ew=en.split(' ').filter(w=>w.length>3&&!['SARL','SNC','SAS','RBT','FA','LA','LE','LES','DE','DU','ET'].includes(w));
+  let hits=0;
+  for(const w of ew) if(ln.split(' ').some(lw=>lw.includes(w)||w.includes(lw))) hits++;
+  return ew.length>0?Math.round(hits/ew.length*35):0;
+}
+function analyserReleve(rows){
+  const credits=[];
+  for(const row of rows){
+    const credit=parseFloat((row[3]||'').toString().replace(',','.').replace(/\s/g,''));
+    if(isNaN(credit)||credit<=0) continue;
+    credits.push({date:excelDateToStr(row[0]),libelle:(row[1]||'').toString(),montant:credit});
+  }
+  if(credits.length===0){toast('Aucun crédit trouvé.','error');return;}
+  const attente=data.filter(d=>d.statut==='attente');
+  const matches=[];
+  for(const dep of attente){
+    for(const cr of credits){
+      if(Math.abs(cr.montant-dep.montant)>0.50) continue;
+      const sf=scoreFournisseur(dep.four,cr.libelle);
+      const se=scoreEntreprise(dep.ent,cr.libelle);
+      const total=sf+se;
+      if(total>=25) matches.push({dep,cr,scoreFour:sf,scoreEnt:se,score:Math.min(total,100)});
+    }
+  }
+  afficherMatches(matches,credits.length);
+}
+function afficherMatches(matches,totalCredits){
+  pendingMatches=matches.map((m,i)=>({...m,idx:i,confirmed:false,rejected:false}));
+  const zone=document.getElementById('match-zone');
+  if(matches.length===0){
+    zone.innerHTML=`<div class="no-match">✅ ${totalCredits} crédit(s) analysé(s) — Aucune correspondance en attente.</div>`;
+    return;
+  }
+  zone.innerHTML=`
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;">
+      ${totalCredits} crédit(s) · <span style="color:var(--green)">${matches.length} correspondance(s)</span>
+    </div>
+    <div id="match-list"></div>
+    <button class="btn" style="margin-top:8px" onclick="confirmerTous()">✅ Confirmer toutes</button>
+  `;
+  renderMatches();
+}
+function renderMatches(){
+  const list=document.getElementById('match-list');
+  if(!list) return;
+  list.innerHTML=pendingMatches.map((m,i)=>{
+    const cls=m.confirmed?'confirmed':m.rejected?'rejected':'';
+    const dateBank=m.cr.date?fmtDate(m.cr.date):'—';
+    let tags=[];
+    if(m.scoreFour>0) tags.push(`<span style="color:var(--green);font-size:10px">✓ Fournisseur</span>`);
+    if(m.scoreEnt>0)  tags.push(`<span style="color:var(--blue);font-size:10px">✓ Entreprise</span>`);
+    return `<div class="match-item ${cls}">
+      <span class="match-score">${m.score}%</span>
+      <div class="match-dep">📤 ${m.dep.four!=='-'?m.dep.four:m.dep.desc} — ${fmt(m.dep.montant)}</div>
+      <div style="font-size:10px;color:var(--blue)">${m.dep.ent!=='-'?'🏢 '+m.dep.ent:''}</div>
+      <div class="match-arrow">↕</div>
+      <div class="match-bank">🏦 ${dateBank} · ${m.cr.libelle.substring(0,65)}</div>
+      ${tags.length?`<div style="display:flex;gap:8px;margin-top:4px">${tags.join('')}</div>`:''}
+      <div class="match-amount">+${fmt(m.cr.montant)}</div>
+      ${!m.confirmed&&!m.rejected?`
+        <div class="match-actions">
+          <button class="btn-sm btn-confirm" onclick="confirmerMatch(${i})">✅ Confirmer</button>
+          <button class="btn-sm btn-reject" onclick="rejeterMatch(${i})">✗ Ignorer</button>
+        </div>`
+      :m.confirmed?`<div style="font-size:11px;color:var(--green);margin-top:6px;font-weight:600">✅ Confirmé</div>`
+      :`<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Ignoré</div>`}
+    </div>`;
+  }).join('');
+}
+function confirmerMatch(i){ changerStatut(pendingMatches[i].dep.id,'rembourse'); pendingMatches[i].confirmed=true; renderMatches(); toast('Confirmé ✓'); }
+function rejeterMatch(i){ pendingMatches[i].rejected=true; renderMatches(); }
+function confirmerTous(){
+  let n=0;
+  pendingMatches.forEach((m,i)=>{if(!m.confirmed&&!m.rejected){changerStatut(m.dep.id,'rembourse');pendingMatches[i].confirmed=true;n++;}});
+  renderMatches(); toast(n+' remboursement(s) confirmé(s) ✓');
+}
+
+render();
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(r => {
+      console.log('SW enregistré:', r.scope);
+    }).catch(e => console.log('SW erreur:', e));
+  });
+}
+</script>
+</body>
+</html>
